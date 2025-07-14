@@ -1,0 +1,41 @@
+Microsoft Visual Studio Solution File, Format Version 12.00
+# Visual Studio Version 17
+VisualStudioVersion = 17.5.2.0
+MinimumVisualStudioVersion = 10.0.40219.1
+Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "include", "include", "{B8EFE43B-BCCE-3DAD-1EBC-21459D0DF14A}"
+EndProject
+Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "contrib", "contrib", "{4C48C91F-E0D0-1617-A650-57BABF00ED0D}"
+EndProject
+Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "zlib", "zlib", "{669FC3E3-CB83-15C1-A1E0-C3C76DD3B3D2}"
+EndProject
+Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "contrib", "contrib", "{C4B79735-7C91-9028-7C32-E21E7088C9C9}"
+EndProject
+Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "dotzlib", "dotzlib", "{DE210E0C-97ED-D366-01BC-BB48CCC92D4A}"
+EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "DotZLib", "include\contrib\zlib\contrib\dotzlib\DotZLib\DotZLib.csproj", "{44AA9B5D-E2D1-43CB-D756-65CE38285310}"
+EndProject
+Global
+	GlobalSection(SolutionConfigurationPlatforms) = preSolution
+		Debug|Any CPU = Debug|Any CPU
+		Release|Any CPU = Release|Any CPU
+	EndGlobalSection
+	GlobalSection(ProjectConfigurationPlatforms) = postSolution
+		{44AA9B5D-E2D1-43CB-D756-65CE38285310}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{44AA9B5D-E2D1-43CB-D756-65CE38285310}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{44AA9B5D-E2D1-43CB-D756-65CE38285310}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{44AA9B5D-E2D1-43CB-D756-65CE38285310}.Release|Any CPU.Build.0 = Release|Any CPU
+	EndGlobalSection
+	GlobalSection(SolutionProperties) = preSolution
+		HideSolutionNode = FALSE
+	EndGlobalSection
+	GlobalSection(NestedProjects) = preSolution
+		{4C48C91F-E0D0-1617-A650-57BABF00ED0D} = {B8EFE43B-BCCE-3DAD-1EBC-21459D0DF14A}
+		{669FC3E3-CB83-15C1-A1E0-C3C76DD3B3D2} = {4C48C91F-E0D0-1617-A650-57BABF00ED0D}
+		{C4B79735-7C91-9028-7C32-E21E7088C9C9} = {669FC3E3-CB83-15C1-A1E0-C3C76DD3B3D2}
+		{DE210E0C-97ED-D366-01BC-BB48CCC92D4A} = {C4B79735-7C91-9028-7C32-E21E7088C9C9}
+		{44AA9B5D-E2D1-43CB-D756-65CE38285310} = {DE210E0C-97ED-D366-01BC-BB48CCC92D4A}
+	EndGlobalSection
+	GlobalSection(ExtensibilityGlobals) = postSolution
+		SolutionGuid = {F3309F4D-ACF5-44CA-BB8E-ACC1A673376D}
+	EndGlobalSection
+EndGlobal
