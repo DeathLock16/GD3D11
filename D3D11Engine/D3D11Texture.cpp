@@ -7,6 +7,11 @@
 #include "RenderToTextureBuffer.h"
 #include "D3D11_Helpers.h"
 
+#include <Windows.h>
+#include <iostream>
+
+static bool s_consoleAllocated = false;
+
 D3D11Texture::D3D11Texture() {}
 
 D3D11Texture::~D3D11Texture() {
@@ -17,6 +22,14 @@ D3D11Texture::~D3D11Texture() {
 
 /** Initializes the texture object */
 XRESULT D3D11Texture::Init( INT2 size, ETextureFormat format, UINT mipMapCount, void* data, const std::string& fileName ) {
+    
+    if (!s_consoleAllocated) {
+        AllocConsole();
+        freopen("CONOUT$", "w", stdout);
+        s_consoleAllocated = true;
+        std::cout << "Console started by D3D11Texture";
+    }
+    
     HRESULT hr;
     D3D11GraphicsEngineBase* engine = reinterpret_cast<D3D11GraphicsEngineBase*>(Engine::GraphicsEngine);
 
@@ -31,6 +44,12 @@ XRESULT D3D11Texture::Init( INT2 size, ETextureFormat format, UINT mipMapCount, 
         1,
         mipMapCount,
         D3D11_BIND_SHADER_RESOURCE, D3D11_USAGE_DEFAULT, 0, 1, 0, 0 );
+
+    if (size.x == 8192 && size.y == 8192) {
+        textureDesc.Usage = D3D11_USAGE_DYNAMIC;
+        textureDesc.CPUAccessFlags = D3D11_CPU_ACCESS_WRITE;
+        std::cout << "CEF texture detected - creating as DYNAMIC!" << std::endl;
+    }
 
     LE( engine->GetDevice()->CreateTexture2D( &textureDesc, nullptr, Texture.ReleaseAndGetAddressOf() ) );
     SetDebugName( Texture.Get(), "D3D11Texture(\"" + fileName + "\")->Texture" );
@@ -80,6 +99,28 @@ XRESULT D3D11Texture::UpdateData( void* data, int mip ) {
 
     UINT TextureWidth = (TextureSize.x >> mip);
     UINT TextureHeight = (TextureSize.y >> mip);
+
+    //std::cout << TextureWidth << " / " << TextureHeight << std::endl;
+
+    //if (TextureWidth == 1920 && TextureHeight == 1080) {
+        //std::cout << "[CEF TEXTURE] UpdateData called! mip=" << mip << std::endl;
+    //}
+
+    if (TextureWidth == 8192 && TextureHeight == 8192) {
+        D3D11_MAPPED_SUBRESOURCE mapped;
+        auto ctx = engine->GetContext();
+        HRESULT hr = ctx->Map(Texture.Get(), 0, D3D11_MAP_WRITE_DISCARD, 0, &mapped);
+
+        if (SUCCEEDED(hr)) {
+            memcpy(mapped.pData, data, GetRowPitchBytes(0) * TextureHeight);
+            ctx->Unmap(Texture.Get(), 0);
+            std::cout << "CEF texture mapped + updated" << std::endl;
+            return XR_SUCCESS;
+        } else {
+            std::cout << "CEF texture map failed!" << std::endl;
+            return XR_FAILED;
+        }
+    }
 
     Microsoft::WRL::ComPtr<ID3D11Texture2D> stagingTexture;
     D3D11_TEXTURE2D_DESC stagingTextureDesc;
@@ -166,7 +207,7 @@ UINT D3D11Texture::GetSizeInBytes( int mip ) {
         return px * py * 4;
     }
 }
-
+static std::vector<uint8_t> fakeData(1024 * 1024 * 4, 255);
 /** Binds this texture to a pixelshader */
 XRESULT D3D11Texture::BindToPixelShader( int slot ) {
     reinterpret_cast<D3D11GraphicsEngineBase*>(Engine::GraphicsEngine)->GetContext()->PSSetShaderResources( slot, 1, ShaderResourceView.GetAddressOf() );
