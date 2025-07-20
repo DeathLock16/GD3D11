@@ -1,3 +1,4 @@
+#define NOMINMAX
 #include "pch.h"
 #include "D3D11Texture.h"
 #include "Engine.h"
@@ -7,12 +8,32 @@
 #include "RenderToTextureBuffer.h"
 #include "D3D11_Helpers.h"
 
-#include <Windows.h>
+#include <windows.h>
 #include <iostream>
+#include <vector>
 
 static bool s_consoleAllocated = false;
 
-D3D11Texture::D3D11Texture() {}
+static HANDLE hMapFile = nullptr;
+static RECT* pBuf = nullptr;
+
+D3D11Texture::D3D11Texture() : lastData() {
+
+    if (!hMapFile) {
+        hMapFile = CreateFileMappingA(
+            INVALID_HANDLE_VALUE, NULL, PAGE_READWRITE,
+            0, 4096, "Global\\CefDirtyRects");
+        if (!hMapFile) {
+            std::cout << "[DX11] Shared memory for dirty rects NOT created!\n";
+            return;
+        }
+        pBuf = (RECT*)MapViewOfFile(hMapFile, FILE_MAP_ALL_ACCESS, 0, 0, 4096);
+        if (!pBuf) {
+            std::cout << "[DX11] MapViewOfFile for dirty rects failed!\n";
+        }
+    }
+
+}
 
 D3D11Texture::~D3D11Texture() {
     Thumbnail.Reset();
@@ -62,6 +83,10 @@ XRESULT D3D11Texture::Init( INT2 size, ETextureFormat format, UINT mipMapCount, 
     LE( engine->GetDevice()->CreateShaderResourceView( Texture.Get(), &descRV, ShaderResourceView.ReleaseAndGetAddressOf() ) );
     SetDebugName( ShaderResourceView.Get(), "D3D11Texture(\"" + fileName + "\")->ShaderResourceView" );
 
+    if (size.x = 8192 && size.y == 8192) {
+        lastData.resize(size.x * size.y * 4, 0);
+    }
+
     return XR_SUCCESS;
 }
 
@@ -106,21 +131,55 @@ XRESULT D3D11Texture::UpdateData( void* data, int mip ) {
         //std::cout << "[CEF TEXTURE] UpdateData called! mip=" << mip << std::endl;
     //}
 
-    if (TextureWidth == 8192 && TextureHeight == 8192) {
-        D3D11_MAPPED_SUBRESOURCE mapped;
-        auto ctx = engine->GetContext();
-        HRESULT hr = ctx->Map(Texture.Get(), 0, D3D11_MAP_WRITE_DISCARD, 0, &mapped);
-
-        if (SUCCEEDED(hr)) {
-            memcpy(mapped.pData, data, GetRowPitchBytes(0) * TextureHeight);
-            ctx->Unmap(Texture.Get(), 0);
-            std::cout << "CEF texture mapped + updated" << std::endl;
-            return XR_SUCCESS;
-        } else {
-            std::cout << "CEF texture map failed!" << std::endl;
-            return XR_FAILED;
+    std::vector<RECT> dirtyRects;
+    if (pBuf) {
+        int rectCount = pBuf[0].left;
+        if (rectCount > 0 && rectCount < 512) { // sanity check
+            for (int i = 0; i < rectCount; ++i)
+                dirtyRects.push_back(pBuf[i + 1]);
         }
     }
+
+    auto ctx = engine->GetContext();
+    D3D11_MAPPED_SUBRESOURCE mapped;
+    HRESULT hr = ctx->Map(Texture.Get(), 0, D3D11_MAP_WRITE_DISCARD, 0, &mapped);
+
+    if (SUCCEEDED(hr) && mapped.pData) {
+        // Jeœli s¹ dirty rects, kopiuj tylko je
+        if (!dirtyRects.empty()) {
+            for (const RECT& rect : dirtyRects) {
+                int x0 = 0 < rect.left ? rect.left : 0;
+                int y0 = 0 < rect.top ? rect.top : 0;
+                int x1 = rect.right < (int)TextureWidth ? rect.right : (int)TextureWidth;
+                int y1 = rect.bottom < (int)TextureHeight ? rect.bottom : (int)TextureHeight;
+
+                int rowBytes = (x1 - x0) * 4;
+                if (rowBytes <= 0) continue;
+
+                for (int y = y0; y < y1; ++y) {
+                    memcpy(
+                        static_cast<uint8_t*>(mapped.pData) + y * mapped.RowPitch + x0 * 4,
+                        static_cast<uint8_t*>(data) + y * TextureWidth * 4 + x0 * 4,
+                        rowBytes
+                    );
+                }
+            }
+            std::cout << "[DX11] Update: " << dirtyRects.size() << " dirty rects\n";
+        } else {
+            // Brak dirty rects? Kopiuj ca³oœæ!
+            memcpy(mapped.pData, data, TextureWidth * TextureHeight * 4);
+            std::cout << "[DX11] Update: FULL texture\n";
+        }
+        ctx->Unmap(Texture.Get(), 0);
+        return XR_SUCCESS;
+    }
+    /*
+    else {
+        std::cout << "[DX11] Map failed!\n";
+        return XR_FAILED;
+    }
+        */
+
 
     Microsoft::WRL::ComPtr<ID3D11Texture2D> stagingTexture;
     D3D11_TEXTURE2D_DESC stagingTextureDesc;
