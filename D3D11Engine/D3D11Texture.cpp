@@ -127,9 +127,13 @@ XRESULT D3D11Texture::UpdateData( void* data, int mip ) {
 
     //std::cout << TextureWidth << " / " << TextureHeight << std::endl;
 
-    //if (TextureWidth == 1920 && TextureHeight == 1080) {
+    if (TextureWidth == 8192 && TextureHeight == 8192) {
         //std::cout << "[CEF TEXTURE] UpdateData called! mip=" << mip << std::endl;
     //}
+
+    size_t texBytes = TextureWidth * TextureHeight * 4;
+    if (lastTextureBuffer.size() != texBytes)
+        lastTextureBuffer.resize(texBytes, 0);
 
     std::vector<RECT> dirtyRects;
     if (pBuf) {
@@ -140,38 +144,42 @@ XRESULT D3D11Texture::UpdateData( void* data, int mip ) {
         }
     }
 
+    if (!dirtyRects.empty()) {
+        auto* src = static_cast<uint8_t*>(data);
+        for (const RECT& rect : dirtyRects) {
+            int x0 = 0 < rect.left ? rect.left : 0;
+            int y0 = 0 < rect.top ? rect.top : 0;
+            int x1 = rect.right < (int)TextureWidth ? rect.right : (int)TextureWidth;
+            int y1 = rect.bottom < (int)TextureHeight ? rect.bottom : (int)TextureHeight;
+            int rowBytes = (x1 - x0) * 4;
+            if (rowBytes <= 0) continue;
+
+            for (int y = y0; y < y1; ++y) {
+                memcpy(
+                    lastTextureBuffer.data() + y * TextureWidth * 4 + x0 * 4,
+                    src + y * TextureWidth * 4 + x0 * 4,
+                    rowBytes
+                );
+            }
+        }
+    } else {
+        memcpy(lastTextureBuffer.data(), data, texBytes);
+    }
+
     auto ctx = engine->GetContext();
     D3D11_MAPPED_SUBRESOURCE mapped;
     HRESULT hr = ctx->Map(Texture.Get(), 0, D3D11_MAP_WRITE_DISCARD, 0, &mapped);
 
     if (SUCCEEDED(hr) && mapped.pData) {
-        // Jeœli s¹ dirty rects, kopiuj tylko je
-        if (!dirtyRects.empty()) {
-            for (const RECT& rect : dirtyRects) {
-                int x0 = 0 < rect.left ? rect.left : 0;
-                int y0 = 0 < rect.top ? rect.top : 0;
-                int x1 = rect.right < (int)TextureWidth ? rect.right : (int)TextureWidth;
-                int y1 = rect.bottom < (int)TextureHeight ? rect.bottom : (int)TextureHeight;
-
-                int rowBytes = (x1 - x0) * 4;
-                if (rowBytes <= 0) continue;
-
-                for (int y = y0; y < y1; ++y) {
-                    memcpy(
-                        static_cast<uint8_t*>(mapped.pData) + y * mapped.RowPitch + x0 * 4,
-                        static_cast<uint8_t*>(data) + y * TextureWidth * 4 + x0 * 4,
-                        rowBytes
-                    );
-                }
-            }
-            std::cout << "[DX11] Update: " << dirtyRects.size() << " dirty rects\n";
-        } else {
-            // Brak dirty rects? Kopiuj ca³oœæ!
-            memcpy(mapped.pData, data, TextureWidth * TextureHeight * 4);
-            std::cout << "[DX11] Update: FULL texture\n";
-        }
+        memcpy(mapped.pData, lastTextureBuffer.data(), texBytes);
         ctx->Unmap(Texture.Get(), 0);
+        std::cout << "[DX11] DirtyRects: " << dirtyRects.size() << std::endl;
         return XR_SUCCESS;
+    }
+    else {
+        std::cout << "[DX11] Map failed!\n";
+        return XR_FAILED;
+    }
     }
     /*
     else {
