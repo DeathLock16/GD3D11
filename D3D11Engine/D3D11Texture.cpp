@@ -66,12 +66,6 @@ XRESULT D3D11Texture::Init( INT2 size, ETextureFormat format, UINT mipMapCount, 
         mipMapCount,
         D3D11_BIND_SHADER_RESOURCE, D3D11_USAGE_DEFAULT, 0, 1, 0, 0 );
 
-    if (size.x == 8192 && size.y == 8192) {
-        textureDesc.Usage = D3D11_USAGE_DYNAMIC;
-        textureDesc.CPUAccessFlags = D3D11_CPU_ACCESS_WRITE;
-        std::cout << "CEF texture detected - creating as DYNAMIC!" << std::endl;
-    }
-
     LE( engine->GetDevice()->CreateTexture2D( &textureDesc, nullptr, Texture.ReleaseAndGetAddressOf() ) );
     SetDebugName( Texture.Get(), "D3D11Texture(\"" + fileName + "\")->Texture" );
 
@@ -167,19 +161,43 @@ XRESULT D3D11Texture::UpdateData( void* data, int mip ) {
     }
 
     auto ctx = engine->GetContext();
-    D3D11_MAPPED_SUBRESOURCE mapped;
-    HRESULT hr = ctx->Map(Texture.Get(), 0, D3D11_MAP_WRITE_DISCARD, 0, &mapped);
+    for (const RECT& rect : dirtyRects) {
+        int x0 = rect.left < 0 ? 0 : rect.left;
+        int y0 = rect.top < 0 ? 0 : rect.top;
+        int x1 = rect.right > 8192 ? 8192 : rect.right;
+        int y1 = rect.bottom > 8192 ? 8192 : rect.bottom;
 
-    if (SUCCEEDED(hr) && mapped.pData) {
-        memcpy(mapped.pData, lastTextureBuffer.data(), texBytes);
-        ctx->Unmap(Texture.Get(), 0);
-        std::cout << "[DX11] DirtyRects: " << dirtyRects.size() << std::endl;
+        int width = x1 - x0;
+        int height = y1 - y0;
+        int rowBytes = width * 4;
+
+        if (width <= 0 || height <= 0) continue;
+
+        // Stwórz packed buffer dla UpdateSubresource
+        std::vector<uint8_t> packedRect(rowBytes * height);
+        auto* src = static_cast<uint8_t*>(data);
+        for (int y = 0; y < height; ++y) {
+            memcpy(
+                packedRect.data() + y * rowBytes,
+                src + (y0 + y) * 8192 * 4 + x0 * 4,
+                rowBytes
+            );
+        }
+
+        D3D11_BOX box;
+        box.left   = x0;
+        box.top    = y0;
+        box.right  = x1;
+        box.bottom = y1;
+        box.front  = 0;
+        box.back   = 1;
+
+        ctx->UpdateSubresource(
+            Texture.Get(), 0, &box, packedRect.data(), rowBytes, 0
+        );
+    }
+
         return XR_SUCCESS;
-    }
-    else {
-        std::cout << "[DX11] Map failed!\n";
-        return XR_FAILED;
-    }
     }
     /*
     else {
