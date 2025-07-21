@@ -12,8 +12,6 @@
 #include <iostream>
 #include <vector>
 
-static bool s_consoleAllocated = false;
-
 static HANDLE hMapFile = nullptr;
 static RECT* pBuf = nullptr;
 
@@ -23,14 +21,9 @@ D3D11Texture::D3D11Texture() : lastData() {
         hMapFile = CreateFileMappingA(
             INVALID_HANDLE_VALUE, NULL, PAGE_READWRITE,
             0, 4096, "Global\\CefDirtyRects");
-        if (!hMapFile) {
-            std::cout << "[DX11] Shared memory for dirty rects NOT created!\n";
+        if (!hMapFile)
             return;
-        }
         pBuf = (RECT*)MapViewOfFile(hMapFile, FILE_MAP_ALL_ACCESS, 0, 0, 4096);
-        if (!pBuf) {
-            std::cout << "[DX11] MapViewOfFile for dirty rects failed!\n";
-        }
     }
 
 }
@@ -43,13 +36,6 @@ D3D11Texture::~D3D11Texture() {
 
 /** Initializes the texture object */
 XRESULT D3D11Texture::Init( INT2 size, ETextureFormat format, UINT mipMapCount, void* data, const std::string& fileName ) {
-    
-    if (!s_consoleAllocated) {
-        AllocConsole();
-        freopen("CONOUT$", "w", stdout);
-        s_consoleAllocated = true;
-        std::cout << "Console started by D3D11Texture";
-    }
     
     HRESULT hr;
     D3D11GraphicsEngineBase* engine = reinterpret_cast<D3D11GraphicsEngineBase*>(Engine::GraphicsEngine);
@@ -119,93 +105,80 @@ XRESULT D3D11Texture::UpdateData( void* data, int mip ) {
     UINT TextureWidth = (TextureSize.x >> mip);
     UINT TextureHeight = (TextureSize.y >> mip);
 
-    //std::cout << TextureWidth << " / " << TextureHeight << std::endl;
-
     if (TextureWidth == 8192 && TextureHeight == 8192) {
-        //std::cout << "[CEF TEXTURE] UpdateData called! mip=" << mip << std::endl;
-    //}
+        size_t texBytes = TextureWidth * TextureHeight * 4;
+        if (lastTextureBuffer.size() != texBytes)
+            lastTextureBuffer.resize(texBytes, 0);
 
-    size_t texBytes = TextureWidth * TextureHeight * 4;
-    if (lastTextureBuffer.size() != texBytes)
-        lastTextureBuffer.resize(texBytes, 0);
-
-    std::vector<RECT> dirtyRects;
-    if (pBuf) {
-        int rectCount = pBuf[0].left;
-        if (rectCount > 0 && rectCount < 512) { // sanity check
-            for (int i = 0; i < rectCount; ++i)
-                dirtyRects.push_back(pBuf[i + 1]);
+        std::vector<RECT> dirtyRects;
+        if (pBuf) {
+            int rectCount = pBuf[0].left;
+            if (rectCount > 0 && rectCount < 512) { // sanity check
+                for (int i = 0; i < rectCount; ++i)
+                    dirtyRects.push_back(pBuf[i + 1]);
+            }
         }
-    }
 
-    if (!dirtyRects.empty()) {
-        auto* src = static_cast<uint8_t*>(data);
+        if (!dirtyRects.empty()) {
+            auto* src = static_cast<uint8_t*>(data);
+            for (const RECT& rect : dirtyRects) {
+                int x0 = 0 < rect.left ? rect.left : 0;
+                int y0 = 0 < rect.top ? rect.top : 0;
+                int x1 = rect.right < (int)TextureWidth ? rect.right : (int)TextureWidth;
+                int y1 = rect.bottom < (int)TextureHeight ? rect.bottom : (int)TextureHeight;
+                int rowBytes = (x1 - x0) * 4;
+                if (rowBytes <= 0) continue;
+
+                for (int y = y0; y < y1; ++y) {
+                    memcpy(
+                        lastTextureBuffer.data() + y * TextureWidth * 4 + x0 * 4,
+                        src + y * TextureWidth * 4 + x0 * 4,
+                        rowBytes
+                    );
+                }
+            }
+        } else {
+            memcpy(lastTextureBuffer.data(), data, texBytes);
+        }
+
+        auto ctx = engine->GetContext();
         for (const RECT& rect : dirtyRects) {
-            int x0 = 0 < rect.left ? rect.left : 0;
-            int y0 = 0 < rect.top ? rect.top : 0;
-            int x1 = rect.right < (int)TextureWidth ? rect.right : (int)TextureWidth;
-            int y1 = rect.bottom < (int)TextureHeight ? rect.bottom : (int)TextureHeight;
-            int rowBytes = (x1 - x0) * 4;
-            if (rowBytes <= 0) continue;
+            int x0 = rect.left < 0 ? 0 : rect.left;
+            int y0 = rect.top < 0 ? 0 : rect.top;
+            int x1 = rect.right > 8192 ? 8192 : rect.right;
+            int y1 = rect.bottom > 8192 ? 8192 : rect.bottom;
 
-            for (int y = y0; y < y1; ++y) {
+            int width = x1 - x0;
+            int height = y1 - y0;
+            int rowBytes = width * 4;
+
+            if (width <= 0 || height <= 0) continue;
+
+            std::vector<uint8_t> packedRect(rowBytes * height);
+            auto* src = static_cast<uint8_t*>(data);
+            for (int y = 0; y < height; ++y) {
                 memcpy(
-                    lastTextureBuffer.data() + y * TextureWidth * 4 + x0 * 4,
-                    src + y * TextureWidth * 4 + x0 * 4,
+                    packedRect.data() + y * rowBytes,
+                    src + (y0 + y) * 8192 * 4 + x0 * 4,
                     rowBytes
                 );
             }
-        }
-    } else {
-        memcpy(lastTextureBuffer.data(), data, texBytes);
-    }
 
-    auto ctx = engine->GetContext();
-    for (const RECT& rect : dirtyRects) {
-        int x0 = rect.left < 0 ? 0 : rect.left;
-        int y0 = rect.top < 0 ? 0 : rect.top;
-        int x1 = rect.right > 8192 ? 8192 : rect.right;
-        int y1 = rect.bottom > 8192 ? 8192 : rect.bottom;
+            D3D11_BOX box;
+            box.left   = x0;
+            box.top    = y0;
+            box.right  = x1;
+            box.bottom = y1;
+            box.front  = 0;
+            box.back   = 1;
 
-        int width = x1 - x0;
-        int height = y1 - y0;
-        int rowBytes = width * 4;
-
-        if (width <= 0 || height <= 0) continue;
-
-        // Stwórz packed buffer dla UpdateSubresource
-        std::vector<uint8_t> packedRect(rowBytes * height);
-        auto* src = static_cast<uint8_t*>(data);
-        for (int y = 0; y < height; ++y) {
-            memcpy(
-                packedRect.data() + y * rowBytes,
-                src + (y0 + y) * 8192 * 4 + x0 * 4,
-                rowBytes
+            ctx->UpdateSubresource(
+                Texture.Get(), 0, &box, packedRect.data(), rowBytes, 0
             );
         }
 
-        D3D11_BOX box;
-        box.left   = x0;
-        box.top    = y0;
-        box.right  = x1;
-        box.bottom = y1;
-        box.front  = 0;
-        box.back   = 1;
-
-        ctx->UpdateSubresource(
-            Texture.Get(), 0, &box, packedRect.data(), rowBytes, 0
-        );
-    }
-
         return XR_SUCCESS;
     }
-    /*
-    else {
-        std::cout << "[DX11] Map failed!\n";
-        return XR_FAILED;
-    }
-        */
-
 
     Microsoft::WRL::ComPtr<ID3D11Texture2D> stagingTexture;
     D3D11_TEXTURE2D_DESC stagingTextureDesc;
