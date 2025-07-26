@@ -1395,7 +1395,8 @@ XRESULT D3D11GraphicsEngine::Present() {
 
     SetDefaultStates();
 
-    SetActivePixelShader( "PS_PFX_Vargoth" );
+    //SetActivePixelShader( "PS_PFX_Vargoth" );
+    SetActivePixelShader( "PS_PFX_Blurred" );
     //SetActivePixelShader( "PS_PFX_GammaCorrectInv" );
 
     ActivePS->Apply();
