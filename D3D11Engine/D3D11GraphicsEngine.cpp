@@ -1374,7 +1374,8 @@ XRESULT D3D11GraphicsEngine::Present() {
 
     SetDefaultStates();
 
-    SetActivePixelShader( "PS_PFX_GammaCorrectInv" );
+    SetActivePixelShader( "PS_PFX_VARGOTH" );
+    //SetActivePixelShader( "PS_PFX_GammaCorrectInv" );
 
     ActivePS->Apply();
 
@@ -1492,7 +1493,7 @@ XRESULT D3D11GraphicsEngine::DrawVertexBuffer( D3D11VertexBuffer* vb, unsigned i
     g_LastDrawCall.BaseIndexLocation = 0;
     if ( !g_LastDrawCall.Check() ) return XR_SUCCESS;
 #endif
-
+    
     UINT offset = 0;
     UINT uStride = stride;
     Context->IASetVertexBuffers( 0, 1, vb->GetVertexBuffer().GetAddressOf(), &uStride, &offset );
