@@ -1358,7 +1358,28 @@ D3D11GraphicsEngine::GetDisplayModeList( std::vector<DisplayModeInfo>* modeList,
 
     return XR_SUCCESS;
 }
+float blendAmount = 0.0f; // globalnie lub jako pole klasy
+bool blendIncreasing = true;
 
+float UpdateBlendAmount()
+{
+    // Zmieñ wartoœæ blendAmount o 0.01 w górê lub dó³
+    if (blendIncreasing)
+        blendAmount += 0.01f;
+    else
+        blendAmount -= 0.01f;
+
+    // Odbij jeœli wysz³o poza zakres 0..1
+    if (blendAmount >= 1.0f) {
+        blendAmount = 1.0f;
+        blendIncreasing = false;
+    }
+    else if (blendAmount <= 0.0f) {
+        blendAmount = 0.0f;
+        blendIncreasing = true;
+    }
+    return blendAmount;
+}
 /** Presents the current frame to the screen */
 XRESULT D3D11GraphicsEngine::Present() {
     D3D11_VIEWPORT vp;
@@ -1374,7 +1395,7 @@ XRESULT D3D11GraphicsEngine::Present() {
 
     SetDefaultStates();
 
-    SetActivePixelShader( "PS_PFX_VARGOTH" );
+    SetActivePixelShader( "PS_PFX_Vargoth" );
     //SetActivePixelShader( "PS_PFX_GammaCorrectInv" );
 
     ActivePS->Apply();
@@ -1384,6 +1405,7 @@ XRESULT D3D11GraphicsEngine::Present() {
     gcb.G_Brightness = Engine::GAPI->GetBrightnessValue();
     gcb.G_TextureSize = GetResolution();
     gcb.G_SharpenStrength = Engine::GAPI->GetRendererState().RendererSettings.SharpenFactor;
+    gcb.G_blendAmount = UpdateBlendAmount();
 
     ActivePS->GetConstantBuffer()[0]->UpdateBuffer( &gcb );
     ActivePS->GetConstantBuffer()[0]->BindToPixelShader( 0 );

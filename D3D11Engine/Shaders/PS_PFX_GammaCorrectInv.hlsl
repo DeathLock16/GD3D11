@@ -17,7 +17,8 @@ cbuffer GammaCorrectConstantBuffer : register( b0 )
 	float2 G_TextureSize;
 	
 	float G_SharpenStrength;
-	float3 G_pad1;
+	float G_blendAmount;
+	float2 G_pad1;
 }
 
 //--------------------------------------------------------------------------------------
