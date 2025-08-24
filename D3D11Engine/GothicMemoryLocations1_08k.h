@@ -141,8 +141,8 @@ struct GothicMemoryLocations {
         static const unsigned int Init = 0x005E6A00;*/
 
         static const unsigned int GetUnderwaterFX = 0x5baaa0;
-        static const unsigned int Offset_OverrideColor = 0x558;
-        static const unsigned int Offset_OverrideFlag = 0x564;
+        static const unsigned int Offset_FarZ = 0x56C;
+        static const unsigned int Offset_Color = 0x580;
 
         static const unsigned int SetCameraLocationHint = 0x005BC7D0;
 
@@ -168,6 +168,7 @@ struct GothicMemoryLocations {
         static const unsigned int Offset_VisTexture = 0x2DC;
         static const unsigned int Offset_VisAlignment = 0x2E4;
         static const unsigned int Offset_VisAlphaBlendFunc = 0x308;
+        static const unsigned int Offset_VisTexAniIsLooping = 0x198;
 
         static const unsigned int Offset_VisShpRender = 0xBC;
         static const unsigned int Offset_VisShpType = 0x258;
@@ -229,6 +230,7 @@ struct GothicMemoryLocations {
         static const unsigned int Offset_VobAlpha = 0xBC;
         static const unsigned int MASK_ShowVisual = 0x1;
         static const unsigned int MASK_VisualAlpha = 0x4;
+        static const unsigned int MASK_DynColl = 0x80; // (1 << 7) collDetectionDynamic
         static const unsigned int Offset_CameraAlignment = 0xF0;
         static const unsigned int SHIFTLR_CameraAlignment = 0x1E;
 
@@ -253,6 +255,10 @@ struct GothicMemoryLocations {
 
         static const unsigned int GetKey_Offset = 0x2C;
         static const unsigned int ProcessInputEvents_Offset = 0x70;
+    };
+
+    struct zCInput_Win32 {
+        static const unsigned int GetKey = 0x004c88a0;
     };
 
     struct zCVisual {
@@ -311,6 +317,7 @@ struct GothicMemoryLocations {
 
     struct zSTRING {
         static const unsigned int ToChar = 0x08;
+        static const unsigned int ConstructorEmptyPtr = 0x00402B30;
         static const unsigned int ConstructorCharPtr = 0x004013A0;
         static const unsigned int DestructorCharPtr = 0x00401260;
     };

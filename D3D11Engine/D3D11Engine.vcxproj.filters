@@ -73,6 +73,12 @@
     <Filter Include="Engine\D3D11\Extensions">
       <UniqueIdentifier>{cf502305-5a6a-4683-a3c3-c77ec64082ac}</UniqueIdentifier>
     </Filter>
+    <Filter Include="Librarys\imgui">
+      <UniqueIdentifier>{fd53c799-2719-4062-ae38-39d4fb2693bb}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="Librarys\imgui\backends">
+      <UniqueIdentifier>{e4f071b6-4339-4759-8c39-b629df4c8412}</UniqueIdentifier>
+    </Filter>
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="pch.h" />
@@ -368,9 +374,6 @@
       <Filter>Engine\GAPI</Filter>
     </ClInclude>
     <ClInclude Include="D2DDialog.h">
-      <Filter>Engine\D2D\Views</Filter>
-    </ClInclude>
-    <ClInclude Include="D2DSettingsDialog.h">
       <Filter>Engine\D2D\Views</Filter>
     </ClInclude>
     <ClInclude Include="oCSpawnManager.h">
@@ -749,6 +752,36 @@
     <ClInclude Include="zCFlash.h">
       <Filter>ZenGin\Classes</Filter>
     </ClInclude>
+    <ClInclude Include="ImGuiShim.h">
+      <Filter>Engine</Filter>
+    </ClInclude>
+    <ClInclude Include="include\imgui\imconfig.h">
+      <Filter>Librarys\imgui</Filter>
+    </ClInclude>
+    <ClInclude Include="include\imgui\imgui_internal.h">
+      <Filter>Librarys\imgui</Filter>
+    </ClInclude>
+    <ClInclude Include="include\imgui\imstb_rectpack.h">
+      <Filter>Librarys\imgui</Filter>
+    </ClInclude>
+    <ClInclude Include="include\imgui\imstb_textedit.h">
+      <Filter>Librarys\imgui</Filter>
+    </ClInclude>
+    <ClInclude Include="include\imgui\imstb_truetype.h">
+      <Filter>Librarys\imgui</Filter>
+    </ClInclude>
+    <ClInclude Include="include\imgui\imgui.h">
+      <Filter>Librarys\imgui</Filter>
+    </ClInclude>
+    <ClInclude Include="include\imgui\backends\imgui_impl_dx11.h">
+      <Filter>Librarys\imgui\backends</Filter>
+    </ClInclude>
+    <ClInclude Include="include\imgui\backends\imgui_impl_win32.h">
+      <Filter>Librarys\imgui\backends</Filter>
+    </ClInclude>
+    <ClInclude Include="zCInput_Win32.h">
+      <Filter>ZenGin\Classes</Filter>
+    </ClInclude>
   </ItemGroup>
   <ItemGroup>
     <ClCompile Include="pch.cpp" />
@@ -884,9 +917,6 @@
     <ClCompile Include="D2DDialog.cpp">
       <Filter>Engine\D2D\Views</Filter>
     </ClCompile>
-    <ClCompile Include="D2DSettingsDialog.cpp">
-      <Filter>Engine\D2D\Views</Filter>
-    </ClCompile>
     <ClCompile Include="D3D11PFX_SMAA.cpp">
       <Filter>Engine\D3D11\PFX\Effects</Filter>
     </ClCompile>
@@ -1012,6 +1042,27 @@
     </ClCompile>
     <ClCompile Include="D3D11CShader.cpp">
       <Filter>Engine\D3D11</Filter>
+    </ClCompile>
+    <ClCompile Include="ImGuiShim.cpp">
+      <Filter>Engine</Filter>
+    </ClCompile>
+    <ClCompile Include="include\imgui\imgui.cpp">
+      <Filter>Librarys\imgui</Filter>
+    </ClCompile>
+    <ClCompile Include="include\imgui\imgui_draw.cpp">
+      <Filter>Librarys\imgui</Filter>
+    </ClCompile>
+    <ClCompile Include="include\imgui\imgui_tables.cpp">
+      <Filter>Librarys\imgui</Filter>
+    </ClCompile>
+    <ClCompile Include="include\imgui\imgui_widgets.cpp">
+      <Filter>Librarys\imgui</Filter>
+    </ClCompile>
+    <ClCompile Include="include\imgui\backends\imgui_impl_dx11.cpp">
+      <Filter>Librarys\imgui\backends</Filter>
+    </ClCompile>
+    <ClCompile Include="include\imgui\backends\imgui_impl_win32.cpp">
+      <Filter>Librarys\imgui\backends</Filter>
     </ClCompile>
   </ItemGroup>
   <ItemGroup>

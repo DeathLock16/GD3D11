@@ -411,7 +411,7 @@ XRESULT D3D11ShaderManager::Init() {
 
     Shaders.push_back( ShaderInfo( "PS_PFX_GammaCorrectInv", "PS_PFX_GammaCorrectInv.hlsl", "p" ) );
     Shaders.back().cBufferSizes.push_back( sizeof( GammaCorrectConstantBuffer ) );
-    
+
     Shaders.push_back( ShaderInfo( "PS_PFX_Vargoth", "PS_PFX_Vargoth.hlsl", "p" ) );
     Shaders.back().cBufferSizes.push_back( sizeof( GammaCorrectConstantBuffer ) );
 

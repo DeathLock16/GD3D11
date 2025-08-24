@@ -302,6 +302,12 @@ public:
         return (flags & GothicMemoryLocations::zCVob::MASK_VisualAlpha);
     }
 
+    /** Returns dynamic collision of the vob */
+    bool GetDynColl() {
+        unsigned int flags = *reinterpret_cast<unsigned int*>(THISPTR_OFFSET( GothicMemoryLocations::zCVob::Offset_Flags ));
+        return (flags & GothicMemoryLocations::zCVob::MASK_DynColl);
+    }
+
     /** Vob transparency */
     float GetVobTransparency() {
         return *reinterpret_cast<float*>(THISPTR_OFFSET( GothicMemoryLocations::zCVob::Offset_VobAlpha ));

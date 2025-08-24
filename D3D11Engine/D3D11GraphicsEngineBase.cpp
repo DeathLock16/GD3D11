@@ -325,6 +325,18 @@ void D3D11GraphicsEngineBase::ConstructShaderMakroList( std::vector<D3D_SHADER_M
 #endif
     list.push_back( m );
 
+    m.Name = "SHD_INFLUENCE";
+#ifdef BUILD_GOTHIC_2_6_fix
+    m.Definition = Engine::GAPI->GetRendererState().RendererSettings.HeroAffectsObjects ? "1" : "0";
+#else
+#ifdef BUILD_1_12F
+    m.Definition = "0";
+#else
+    m.Definition = (haveWindAnimations && Engine::GAPI->GetRendererState().RendererSettings.HeroAffectsObjects) ? "1" : "0";
+#endif
+#endif
+    list.push_back( m );
+
     m.Name = "SHD_WATERANI";
 #ifdef BUILD_GOTHIC_2_6_fix
     m.Definition = s.EnableWaterAnimation ? "1" : "0";

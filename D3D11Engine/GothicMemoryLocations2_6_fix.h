@@ -209,6 +209,8 @@ struct GothicMemoryLocations {
         static const unsigned int Offset_SkyLayerState1 = 0x124;
         static const unsigned int Offset_OverrideColor = 0x558;
         static const unsigned int Offset_OverrideFlag = 0x564;
+        static const unsigned int Offset_FarZ = 0x580;
+        static const unsigned int Offset_Color = 0x594;
         static const unsigned int Interpolate = 0x005E8C20;
         static const unsigned int Offset_InitDone = 0x7C;
         static const unsigned int Init = 0x005E6A00;
@@ -241,6 +243,7 @@ struct GothicMemoryLocations {
         static const unsigned int Offset_VisAlphaBlendFunc = 0x340;
         static const unsigned int Offset_AlphaDist = 0x35C;
         static const unsigned int Offset_VisAlphaStart = 0x1F0;
+        static const unsigned int Offset_VisTexAniFPS = 0x194;
         static const unsigned int Offset_VisTexAniIsLooping = 0x198;
         static const unsigned int Offset_VisIsQuadPoly = 0x190;
 
@@ -291,6 +294,10 @@ struct GothicMemoryLocations {
 
         static const unsigned int GetKey_Offset = 0x2C;
         static const unsigned int ProcessInputEvents_Offset = 0x74;
+    };
+
+    struct zCInput_Win32 {
+        static const unsigned int GetKey = 0x004d5370;
     };
 
     struct GlobalObjects {
@@ -461,6 +468,7 @@ struct GothicMemoryLocations {
         static const unsigned int Offset_VobAlpha = 0xCC;
         static const unsigned int MASK_ShowVisual = 0x1;
         static const unsigned int MASK_VisualAlpha = 0x4;
+        static const unsigned int MASK_DynColl = 0x80; // (1 << 7) collDetectionDynamic
         static const unsigned int Offset_CameraAlignment = 0x110;
         static const unsigned int SHIFTLR_CameraAlignment = 0x1E;
 
@@ -536,6 +544,7 @@ struct GothicMemoryLocations {
 
     struct zSTRING {
         static const unsigned int ToChar = 0x08;
+        static const unsigned int ConstructorEmptyPtr = 0x00402AF0;
         static const unsigned int ConstructorCharPtr = 0x004010C0;
         static const unsigned int DestructorCharPtr = 0x00401160;
     };

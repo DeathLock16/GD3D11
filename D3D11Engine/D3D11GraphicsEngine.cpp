@@ -49,6 +49,8 @@
 #include "SteamOverlay.h"
 #include <dxgi1_6.h>
 
+#include "ImGuiShim.h"
+
 namespace wrl = Microsoft::WRL;
 
 const int NUM_UNLOADEDTEXCOUNT_FORCE_LOAD_TEXTURES = 100;
@@ -67,6 +69,7 @@ const int NUM_MIN_FRAME_SHADOW_UPDATES =
 const int MAX_IMPORTANT_LIGHT_UPDATES = 1;
 
 constexpr float inv255f = (1.f / 255.f);
+float vobAnimation_WindStrength = 1.0f;
 
 bool FeatureLevel10Compatibility = false;
 bool FeatureRTArrayIndexFromAnyShader = false;
@@ -952,6 +955,8 @@ XRESULT D3D11GraphicsEngine::OnResize( INT2 newSize ) {
         // Need to init AntTweakBar now that we have a working swapchain
         XLE( Engine::AntTweakBar->Init() );
 
+        Engine::ImGuiHandle->Init( GetActiveWindow(), GetDevice(), GetContext() );
+
         wrl::ComPtr<IDXGISwapChain2> swapChain2;
         if ( m_lowlatency && SUCCEEDED( SwapChain.As( &swapChain2 ) ) ) {
             frameLatencyWaitableObject = swapChain2->GetFrameLatencyWaitableObject();
@@ -1027,6 +1032,7 @@ XRESULT D3D11GraphicsEngine::OnResize( INT2 newSize ) {
     SetDebugName( WorldShadowmap1->GetDepthStencilView().Get(), "WorldShadowmap1->DepthStencilView" );
 
     Engine::AntTweakBar->OnResize( newSize );
+    Engine::ImGuiHandle->OnResize( newSize );
 
     return XR_SUCCESS;
 }
@@ -1396,8 +1402,8 @@ XRESULT D3D11GraphicsEngine::Present() {
     SetDefaultStates();
 
     //SetActivePixelShader( "PS_PFX_Vargoth" );
-    SetActivePixelShader( "PS_PFX_Blurred" );
-    //SetActivePixelShader( "PS_PFX_GammaCorrectInv" );
+    //SetActivePixelShader( "PS_PFX_Blurred" );
+    SetActivePixelShader( "PS_PFX_GammaCorrectInv" );
 
     ActivePS->Apply();
 
@@ -1407,7 +1413,7 @@ XRESULT D3D11GraphicsEngine::Present() {
     gcb.G_TextureSize = GetResolution();
     gcb.G_SharpenStrength = Engine::GAPI->GetRendererState().RendererSettings.SharpenFactor;
     gcb.G_blendAmount = UpdateBlendAmount();
-
+    
     ActivePS->GetConstantBuffer()[0]->UpdateBuffer( &gcb );
     ActivePS->GetConstantBuffer()[0]->BindToPixelShader( 0 );
 
@@ -1421,10 +1427,15 @@ XRESULT D3D11GraphicsEngine::Present() {
     UpdateRenderStates();
     Engine::AntTweakBar->Draw();
 
-    if ( UIView ) {
+    if ( UIView || Engine::ImGuiHandle ) {
         SetDefaultStates();
         UpdateRenderStates();
-        UIView->Render( Engine::GAPI->GetFrameTimeSec() );
+        if ( UIView ) {
+            UIView->Render( Engine::GAPI->GetFrameTimeSec() );
+        }
+        if ( Engine::ImGuiHandle && Engine::ImGuiHandle->Initiated ) {
+            Engine::ImGuiHandle->RenderLoop();
+        }
     }
 
     // Don't allow presenting from different thread than mainthread
@@ -1516,7 +1527,7 @@ XRESULT D3D11GraphicsEngine::DrawVertexBuffer( D3D11VertexBuffer* vb, unsigned i
     g_LastDrawCall.BaseIndexLocation = 0;
     if ( !g_LastDrawCall.Check() ) return XR_SUCCESS;
 #endif
-    
+
     UINT offset = 0;
     UINT uStride = stride;
     Context->IASetVertexBuffers( 0, 1, vb->GetVertexBuffer().GetAddressOf(), &uStride, &offset );
@@ -2495,8 +2506,10 @@ XRESULT D3D11GraphicsEngine::OnStartWorldRendering() {
 
     // return XR_SUCCESS;
     if ( PresentPending ) return XR_SUCCESS;
+    if ( !Engine::GAPI->IsGamePaused() ) {
+        ApplyWindProps( g_windBuffer );
+    }
 
-    ApplyWindProps( g_windBuffer );
     if ( FeatureLevel10Compatibility ) {
         // Disable here what we can't draw in feature level 10 compatibility
         Engine::GAPI->GetRendererState().RendererSettings.HbaoSettings.Enabled = false;
@@ -4284,6 +4297,9 @@ void XM_CALLCONV D3D11GraphicsEngine::DrawWorldAround( FXMVECTOR position,
         }
         DynamicInstancingBuffer->Unmap();*/
 
+        XMFLOAT3 vPlayerPosition = Engine::GAPI->GetPlayerVob() ? Engine::GAPI->GetPlayerVob()->GetPositionWorld() : XMFLOAT3( 0, 0, 0 );
+        g_windBuffer.playerPos = float3( vPlayerPosition.x, vPlayerPosition.y, vPlayerPosition.z );
+
         // Draw all vobs the player currently sees
         for ( auto const& staticMeshVisual : staticMeshVisuals ) {
             if ( staticMeshVisual.second->Instances.empty() ) continue;
@@ -4424,11 +4440,23 @@ void D3D11GraphicsEngine::ApplyWindProps( VS_ExConstantBuffer_Wind& windBuff ) {
     
     //LogInfo() << windBuff.windDir.x << " " << windBuff.windDir.y << " " << windBuff.windDir.z;
 
-    // 36 million ms = 10 hours of playing, no wind animation breaking in 10 hours
-    // when globalTime is 0, it resets shader (vertex position)
-    // so globalTime perios must be long
-    windBuff.globalTime = static_cast<float>((Engine::GAPI->GetTotalTimeDW()) % 36000000);
+    static float WindGlobalTime = 0.0f;
 
+    // get rain weight
+    float rainWeight = Engine::GAPI->GetRainFXWeight();
+
+    // limit in 0..1 range
+    rainWeight = std::max<float>( 0.0f, std::min<float>( 1.0f, rainWeight ) );
+
+    // max multiplayers when rain is 1.0 (max)
+    constexpr float rainMaxStrengthMultiplier = 2.75f;
+    constexpr float rainMaxSpeedMultiplier = 2.15f;
+
+    vobAnimation_WindStrength = (1.0f + rainWeight * (rainMaxStrengthMultiplier - 1.0f))
+        * Engine::GAPI->GetRendererState().RendererSettings.GlobalWindStrength;
+
+    WindGlobalTime += dt * (1.5f * (1.0f + rainWeight * (rainMaxSpeedMultiplier - 1.0f)));
+    windBuff.globalTime = WindGlobalTime;
 }
 
 /** Draws the static vobs instanced */
@@ -4533,6 +4561,9 @@ XRESULT D3D11GraphicsEngine::DrawVOBsInstanced() {
             vobs[i]->VisibleInRenderPass = false;  // Reset this for the next frame
             RenderedVobs.push_back( vobs[i] );
         }
+
+        XMFLOAT3 vPlayerPosition = Engine::GAPI->GetPlayerVob() ? Engine::GAPI->GetPlayerVob()->GetPositionWorld() : XMFLOAT3( 0, 0, 0 );
+        g_windBuffer.playerPos = float3( vPlayerPosition.x, vPlayerPosition.y, vPlayerPosition.z );
 
         for ( auto const& staticMeshVisual : staticMeshVisuals ) {
             if ( staticMeshVisual.second->Instances.empty() ) continue;
@@ -5504,15 +5535,18 @@ XRESULT D3D11GraphicsEngine::DrawLighting( std::vector<VobLightInfo*>& lights ) 
     scb.SQ_WorldAOStrength = Engine::GAPI->GetRendererState().RendererSettings.WorldAOStrength;
 
     // Modify lightsettings when indoor
-    if ( Engine::GAPI->GetLoadedWorldInfo()->BspTree->GetBspTreeMode() ==
-        zBSP_MODE_INDOOR ) {
-        // TODO: fix caves in Gothic 1 being way too dark. Remove this workaround.
+    if ( auto bspTree = Engine::GAPI->GetLoadedWorldInfo()->BspTree )
+        if ( bspTree->GetBspTreeMode() == zBSP_MODE_INDOOR ) {
+            // TODO: fix caves in Gothic 1 being way too dark. Remove this workaround.
 #if BUILD_GOTHIC_1_08k
-        // Kirides: Nah, just make it dark enough.
-        scb.SQ_ShadowStrength = 0.085f;
+            // Kirides: Nah, just make it dark enough.
+            if ( Engine::GAPI->GetLoadedWorldInfo()->WorldName == "ORCTEMPEL" )
+                scb.SQ_ShadowStrength = 0.15f;
+            else
+                scb.SQ_ShadowStrength = 0.3f;
 #else
-        // Turn off shadows
-        scb.SQ_ShadowStrength = 0.0f;
+            // Turn off shadows
+            scb.SQ_ShadowStrength = 0.0f;
 #endif
 
         // Only use world AO
@@ -5845,18 +5879,52 @@ void D3D11GraphicsEngine::OnUIEvent( EUIEvent uiEvent ) {
     }
 
     if ( uiEvent == UI_OpenSettings ) {
-        if ( UIView ) {
+        if ( auto hImgui = Engine::ImGuiHandle ) {
             // Show settings
-            UIView->GetSettingsDialog()->SetHidden(
-                !UIView->GetSettingsDialog()->IsHidden() );
+            if ( hImgui->AdvancedSettingsVisible ) {
+                hImgui->AdvancedSettingsVisible = false;
+                hImgui->IsActive = false;
+            } else {
+                hImgui->SettingsVisible = !hImgui->SettingsVisible;
+                hImgui->IsActive = hImgui->SettingsVisible;
+            }
 
             // Free mouse
-            Engine::GAPI->SetEnableGothicInput(
-                UIView->GetSettingsDialog()->IsHidden() );
+            Engine::GAPI->SetEnableGothicInput( !hImgui->IsActive );
+        }
+        UpdateClipCursor( OutputWindow );
+    } else if ( uiEvent == UI_ToggleAdvancedSettings ) {
+        if ( auto hImgui = Engine::ImGuiHandle ) {
+            // Show settings
+            if ( hImgui->SettingsVisible ) {
+                hImgui->SettingsVisible = false;
+                hImgui->IsActive = hImgui->SettingsVisible;
+            } else {
+                hImgui->AdvancedSettingsVisible = !hImgui->AdvancedSettingsVisible;
+                hImgui->IsActive = hImgui->AdvancedSettingsVisible;
+            }
+
+            // Free mouse
+            Engine::GAPI->SetEnableGothicInput( !hImgui->IsActive );
         }
         UpdateClipCursor( OutputWindow );
     } else if ( uiEvent == UI_ClosedSettings ) {
         // Settings can be closed in multiple ways
+        if ( auto hImgui = Engine::ImGuiHandle; hImgui->IsActive ) {
+            // Show settings
+            hImgui->SettingsVisible = false;
+            hImgui->AdvancedSettingsVisible = false;
+            hImgui->IsActive = false;
+
+            // re-enable input, this clears the key buffer!
+            Engine::GAPI->SetEnableGothicInput( true );
+        }
+        else if ( auto antBar = Engine::AntTweakBar; antBar->GetActive() ) {
+            antBar->SetActive( false );
+            // re-enable input, this clears the key buffer!
+            Engine::GAPI->SetEnableGothicInput( true );
+        }
+
         UpdateClipCursor( OutputWindow );
     } else if ( uiEvent == UI_OpenEditor ) {
         if ( UIView ) {
@@ -5865,8 +5933,9 @@ void D3D11GraphicsEngine::OnUIEvent( EUIEvent uiEvent ) {
                 true;
 
             // Free mouse
-            Engine::GAPI->SetEnableGothicInput(
-                UIView->GetSettingsDialog()->IsHidden() );
+            if ( auto hImgui = Engine::ImGuiHandle ) {
+                Engine::GAPI->SetEnableGothicInput( !hImgui->IsActive );
+            }
         }
     }
 }
@@ -6278,7 +6347,7 @@ void D3D11GraphicsEngine::DrawUnderwaterEffects() {
 /** Returns the settings window availability */
 bool D3D11GraphicsEngine::HasSettingsWindow()
 {
-    return (UIView && UIView->GetSettingsDialog() && !UIView->GetSettingsDialog()->IsHidden());
+    return ( Engine::ImGuiHandle && Engine::ImGuiHandle->IsActive );
 }
 
 /** Creates the main UI-View */

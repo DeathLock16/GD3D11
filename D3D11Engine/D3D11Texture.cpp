@@ -36,7 +36,7 @@ D3D11Texture::~D3D11Texture() {
 
 /** Initializes the texture object */
 XRESULT D3D11Texture::Init( INT2 size, ETextureFormat format, UINT mipMapCount, void* data, const std::string& fileName ) {
-    
+
     HRESULT hr;
     D3D11GraphicsEngineBase* engine = reinterpret_cast<D3D11GraphicsEngineBase*>(Engine::GraphicsEngine);
 
@@ -66,7 +66,7 @@ XRESULT D3D11Texture::Init( INT2 size, ETextureFormat format, UINT mipMapCount, 
     if (size.x = 8192 && size.y == 8192) {
         lastData.resize(size.x * size.y * 4, 0);
     }
-
+    
     return XR_SUCCESS;
 }
 
@@ -104,7 +104,7 @@ XRESULT D3D11Texture::UpdateData( void* data, int mip ) {
 
     UINT TextureWidth = (TextureSize.x >> mip);
     UINT TextureHeight = (TextureSize.y >> mip);
-
+    
     if (TextureWidth == 8192 && TextureHeight == 8192) {
         size_t texBytes = TextureWidth * TextureHeight * 4;
         if (lastTextureBuffer.size() != texBytes)

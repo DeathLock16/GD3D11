@@ -281,8 +281,10 @@ extern "C" void WINAPI HookedReleaseDDThreadLock() {
 }
 
 extern "C" float WINAPI UpdateCustomFontMultiplierFontRendering( float multiplier ) {
+    // Using this function is unrecommended if you respect your players
+    // there are a lot of players that don't play with GD3D11 mod
     D3D11GraphicsEngine* engine = reinterpret_cast<D3D11GraphicsEngine*>(Engine::GraphicsEngine);
-    return engine ? engine->UpdateCustomFontMultiplierFontRendering( 1.f ) : 1.0;
+    return engine ? engine->UpdateCustomFontMultiplierFontRendering( multiplier ) : 1.0f;
 }
 
 extern "C" void WINAPI SetCustomCloudAndNightTexture( int idxTexture, bool isNightTexture ) {
@@ -307,7 +309,6 @@ extern "C" void WINAPI SetCustomSkyWavelengths( float X, float Y, float Z ) {
         sky->SetCustomSkyWavelengths( X, Y, Z );
     }
 }
-
 
 extern "C" void WINAPI EnableWindAnimations( void ) {
 #if defined(BUILD_GOTHIC_1_08k) && !defined(BUILD_1_12F)

@@ -412,6 +412,9 @@ public:
     /** Returns the GSky-Object */
     GSky* GetSky() const;
 
+    /** Returns the far Z */
+    float GetFarZ();
+
     /** Returns the fog-color */
     FXMVECTOR GetFogColor();
 

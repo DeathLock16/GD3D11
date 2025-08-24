@@ -23,8 +23,10 @@
 #include "GInventory.h"
 
 #define DIRECTINPUT_VERSION 0x0700
+#include <charconv>
 #include <dinput.h>
 #include "BaseAntTweakBar.h"
+#include "ImGuiShim.h"
 #include "zCInput.h"
 #include "zCBspTree.h"
 #include "BaseLineRenderer.h"
@@ -46,6 +48,12 @@
 
 // TODO: REMOVE THIS!
 #include "D3D11GraphicsEngine.h"
+
+#ifndef PUBLIC_RELEASE
+#define OPT_DBG_NOINLINE __declspec(noinline)
+#else
+#define OPT_DBG_NOINLINE
+#endif
 
 // Duration how long the scene will stay wet, in MS
 const DWORD SCENE_WETNESS_DURATION_MS = 30 * 1000;
@@ -134,40 +142,204 @@ GothicAPI::~GothicAPI() {
     SAFE_DELETE( WrappedWorldMesh );
 }
 
-float GetPrivateProfileFloatA(
-    const LPCSTR lpAppName,
-    const LPCSTR lpKeyName,
-    const float nDefault,
-    const std::string& lpFileName
-) {
-    const int float_str_max = 30;
-    TCHAR nFloat[float_str_max];
-    if ( GetPrivateProfileStringA( lpAppName, lpKeyName, nullptr, nFloat, float_str_max, lpFileName.c_str() ) ) {
-        try {
-            return std::stof( std::string( nFloat ) );
-        } catch ( const std::exception& ) {
-            return nDefault;
+namespace
+{
+    OPT_DBG_NOINLINE float GetPrivateProfileFloatA(
+        const LPCSTR lpAppName,
+        const LPCSTR lpKeyName,
+        const float nDefault,
+        const std::string& lpFileName
+    ) {
+        const int float_str_max = 30;
+        TCHAR nFloat[float_str_max];
+        if ( auto count = ::GetPrivateProfileStringA( lpAppName, lpKeyName, nullptr, nFloat, float_str_max, lpFileName.c_str() ) ) {
+            try {
+                return std::stof( std::string( nFloat, count ) );
+            } catch ( const std::exception& ) {
+                return nDefault;
+            }
+        }
+        return nDefault;
+    }
+
+    // Helper function to trim leading/trailing whitespace
+    std::string_view trim(std::string_view sv) {
+        auto first = sv.find_first_not_of(" \t\n\r\f\v");
+        if (std::string_view::npos == first) {
+            return sv.substr(0, 0); // Return an empty view if all characters are whitespace
+        }
+        auto last = sv.find_last_not_of(" \t\n\r\f\v");
+        return sv.substr(first, (last - first + 1));
+    }
+
+    template <typename T>
+    OPT_DBG_NOINLINE bool parse_segment_from_chars( std::string_view sv, T* out ) {
+        sv = trim( sv ); // Trim whitespace
+
+        // Check if the type is supported by std::from_chars
+        if constexpr ( !std::is_integral_v<T> && !std::is_floating_point_v<T> ) {
+            // This static_assert will fire at compile time if you try to use
+            // a type that from_chars doesn't support.
+            static_assert(std::is_integral_v<T> || std::is_floating_point_v<T>,
+                          "parse_segment_from_chars: Unsupported type T. Only integral and floating point types are supported.");
+            // Need a runtime throw for compilers that might not hard-error on static_assert(false) in unreachable code
+            throw std::runtime_error( "Internal error: Unsupported type T reached runtime parse logic." ); // Should not happen
+        }
+
+        if ( sv.empty() ) {
+            // from_chars cannot parse empty strings
+            return false;
+        }
+
+        T value;
+        auto result = std::from_chars( sv.data(), sv.data() + sv.size(), value );
+        if ( result.ec == std::errc() && out ) {
+            *out = value;
+            return true;
+        }
+        return false;
+    }
+
+    template <typename T>
+    OPT_DBG_NOINLINE size_t parse_delimited_list_to_array( std::string_view input, T* output_array, size_t max_size, char delimiter = ',' ) {
+        if ( !output_array || max_size == 0 ) {
+            return 0; // Nothing to do
+        }
+
+        size_t count = 0;
+        size_t start = 0;
+
+        while ( start < input.size() ) {
+            // Check if we have space BEFORE parsing
+            if ( count >= max_size ) {
+                // We found more segments than the array can hold
+                return max_size;
+            }
+
+            size_t end = input.find( delimiter, start );
+            std::string_view segment;
+
+            if ( end == std::string_view::npos ) {
+                segment = input.substr( start );
+                start = input.size(); // Process the rest and exit loop
+            } else {
+                segment = input.substr( start, end - start );
+                start = end + 1;
+            }
+
+            std::string_view trimmed_segment = trim( segment );
+
+            // Skip empty segments after trimming
+            if ( trimmed_segment.empty() ) {
+                continue;
+            }
+
+            if ( T value; parse_segment_from_chars( trimmed_segment, &value ) ) {
+                output_array[count++] = value; // Store and increment count
+            }
+        }
+
+        return count; // Return the number of elements successfully parsed and stored
+    }
+
+    template<typename T>
+    OPT_DBG_NOINLINE void GetPrivateProfileArray(
+        const LPCSTR lpAppName,
+        const LPCSTR lpKeyName,
+        T* values,
+        const size_t count,
+        const T* defaults,
+        const std::string& lpFileName
+    ) {
+        const int buf_max = 512;
+        TCHAR buffer[buf_max];
+
+        // Get the full string value
+        if ( auto len = ::GetPrivateProfileStringA( lpAppName, lpKeyName, nullptr, buffer, buf_max, lpFileName.c_str() ) ) {
+            std::string_view str( buffer, len );
+
+            // parse and fill all remaining values with defaults if key not found
+            for ( size_t i = parse_delimited_list_to_array( str, values, count ); i < count; ++i ) {
+                values[i] = defaults[i];
+            }
         }
     }
-    return nDefault;
-}
 
-std::string GetPrivateProfileStringA(
-    const LPCSTR lpAppName,
-    const LPCSTR lpKeyName,
-    const std::string& lpcstrDefault,
-    const std::string& lpFileName ) {
-    char buffer[MAX_PATH];
-    GetPrivateProfileStringA( lpAppName, lpKeyName, lpcstrDefault.c_str(), buffer, MAX_PATH, lpFileName.c_str() );
-    return std::string( buffer );
-}
+    template<typename T>
+    OPT_DBG_NOINLINE void GetPrivateProfileRGB(
+        const LPCSTR lpAppName,
+        const LPCSTR lpKeyName,
+        T& values,
+        const std::string& lpFileName
+    ) {
+        const int defaults[3] = {
+            static_cast<int>(values.x * 255.0f),
+            static_cast<int>(values.y * 255.0f),
+            static_cast<int>(values.z * 255.0f),
+        };
+        int color[3] = {
+            static_cast<int>(values.x * 255.0f),
+            static_cast<int>(values.y * 255.0f),
+            static_cast<int>(values.z * 255.0f),
+        };
+        GetPrivateProfileArray(lpAppName, lpKeyName, color, 3, defaults, lpFileName);
+        values.x = static_cast<float>(color[0]) / 255.0f;
+        values.y = static_cast<float>(color[1]) / 255.0f;
+        values.z = static_cast<float>(color[2]) / 255.0f;
+    }
 
-bool GetPrivateProfileBoolA(
-    const LPCSTR lpAppName,
-    const LPCSTR lpKeyName,
-    const bool nDefault,
-    const std::string& lpFileName ) {
-    return GetPrivateProfileIntA( lpAppName, lpKeyName, nDefault, lpFileName.c_str() ) ? true : false;
+    template<typename T>
+    OPT_DBG_NOINLINE void WritePrivateProfileArray(
+        const LPCSTR lpAppName,
+        const LPCSTR lpKeyName, 
+        T* values,
+        const size_t count,
+        const std::string& lpFileName
+    ) {
+        std::stringstream ss;
+
+        for (size_t i = 0; i < count; i++)
+        {
+            ss << values[i];
+            if (i < count - 1) {
+                ss << ",";
+            }
+        }
+        WritePrivateProfileStringA(lpAppName, lpKeyName, ss.str().c_str(), lpFileName.c_str());
+    }
+
+    OPT_DBG_NOINLINE void WritePrivateProfileRGB(
+        const LPCSTR lpAppName,
+        const LPCSTR lpKeyName, 
+        float3 values,
+        const std::string& lpFileName
+    ) {
+        int color[3] = {
+            static_cast<int>(values.x * 255.0f),
+            static_cast<int>(values.y * 255.0f),
+            static_cast<int>(values.z * 255.0f),
+        };
+        WritePrivateProfileArray(lpAppName, lpKeyName, color, 3, lpFileName.c_str());
+    }
+
+    OPT_DBG_NOINLINE std::string GetPrivateProfileStringA(
+        const LPCSTR lpAppName,
+        const LPCSTR lpKeyName,
+        const std::string& lpcstrDefault,
+        const std::string& lpFileName ) {
+        char buffer[MAX_PATH];
+        auto count = ::GetPrivateProfileStringA( lpAppName, lpKeyName, lpcstrDefault.c_str(), buffer, MAX_PATH, lpFileName.c_str() );
+        return std::string( buffer, count );
+    }
+
+    OPT_DBG_NOINLINE bool GetPrivateProfileBoolA(
+        const LPCSTR lpAppName,
+        const LPCSTR lpKeyName,
+        const bool nDefault,
+        const std::string& lpFileName ) {
+        return GetPrivateProfileIntA( lpAppName, lpKeyName, nDefault, lpFileName.c_str() ) ? true : false;
+    }
+
 }
 
 /** Called when the game starts */
@@ -792,19 +964,33 @@ void GothicAPI::LoadRendererWorldSettings( GothicRendererSettings& s ) {
         GetPrivateProfileIntA( "Atmoshpere", "SunLightColorB", static_cast<int>(s.SunLightColor.z * 255.0f), ini.c_str() )
     );
 
+    GetPrivateProfileRGB("Atmoshpere", "SunLightColor", s.SunLightColor, ini);
+
     s.FogColorMod = float3::FromColor(
         GetPrivateProfileIntA( "Atmoshpere", "FogColorModR", static_cast<int>(s.FogColorMod.x * 255.0f), ini.c_str() ),
         GetPrivateProfileIntA( "Atmoshpere", "FogColorModG", static_cast<int>(s.FogColorMod.y * 255.0f), ini.c_str() ),
         GetPrivateProfileIntA( "Atmoshpere", "FogColorModB", static_cast<int>(s.FogColorMod.z * 255.0f), ini.c_str() )
     );
 
+    GetPrivateProfileRGB("Atmoshpere", "FogColorMod", s.FogColorMod, ini);
+
     if ( !GMPModeActive ) {
-        s.VisualFXDrawRadius = GetPrivateProfileFloatA( "General", "VisualFXDrawRadius", s.VisualFXDrawRadius, ini );
-        s.OutdoorVobDrawRadius = GetPrivateProfileFloatA( "General", "OutdoorVobDrawRadius", s.OutdoorVobDrawRadius, ini );
+	    s.VisualFXDrawRadius = GetPrivateProfileFloatA( "General", "VisualFXDrawRadius", s.VisualFXDrawRadius, ini );
+	    s.OutdoorVobDrawRadius = GetPrivateProfileFloatA( "General", "OutdoorVobDrawRadius", s.OutdoorVobDrawRadius, ini );
         s.OutdoorSmallVobDrawRadius = GetPrivateProfileFloatA( "General", "OutdoorSmallVobDrawRadius", s.OutdoorSmallVobDrawRadius, ini );
-        s.SkeletalMeshDrawRadius = GetPrivateProfileFloatA( "General", "SkeletalMeshDrawRadius", s.SkeletalMeshDrawRadius, ini );
-        s.SectionDrawRadius = GetPrivateProfileFloatA( "General", "SectionDrawRadius", s.SectionDrawRadius, ini );
+        s.IndoorVobDrawRadius = GetPrivateProfileFloatA( "General", "IndoorVobDrawRadius", s.IndoorVobDrawRadius, ini );
+	    s.SkeletalMeshDrawRadius = GetPrivateProfileFloatA( "General", "SkeletalMeshDrawRadius", s.SkeletalMeshDrawRadius, ini );
+	    s.SectionDrawRadius = GetPrivateProfileFloatA( "General", "SectionDrawRadius", s.SectionDrawRadius, ini );
     }
+
+    s.RainRadiusRange = GetPrivateProfileFloatA( "Rain", "RadiusRange", s.RainRadiusRange, ini );
+    s.RainHeightRange = GetPrivateProfileFloatA( "Rain", "HeightRange", s.RainHeightRange, ini );
+    s.RainNumParticles = GetPrivateProfileIntA( "Rain", "NumParticles", s.RainNumParticles, ini.c_str() );
+    GetPrivateProfileArray( "Rain", "GlobalVelocity", &s.RainGlobalVelocity.x, 3, &s.RainGlobalVelocity.x, ini );
+    s.RainSceneWettness = GetPrivateProfileFloatA( "Rain", "SceneWettness", s.RainSceneWettness, ini );
+    s.RainSunLightStrength = GetPrivateProfileFloatA( "Rain", "SunLightStrength", s.RainSunLightStrength, ini );
+    GetPrivateProfileRGB( "Rain", "FogColor", s.RainFogColor, ini );
+    s.RainFogDensity = GetPrivateProfileFloatA( "Rain", "FogDensity", s.RainFogDensity, ini );
 
     s.ReplaceSunDirection = GetPrivateProfileBoolA( "Atmoshpere", "ReplaceSunDirection", s.ReplaceSunDirection, ini );
 
@@ -815,6 +1001,8 @@ void GothicAPI::LoadRendererWorldSettings( GothicRendererSettings& s ) {
         GetPrivateProfileFloatA( "Atmoshpere", "LightDirectionY", aS.LightDirection.y, ini ),
         GetPrivateProfileFloatA( "Atmoshpere", "LightDirectionZ", aS.LightDirection.z, ini )
     );
+
+    GetPrivateProfileArray("Atmoshpere", "LightDirection", &aS.LightDirection.x, 3, &aS.LightDirection.x, ini);
 }
 
 void GothicAPI::SaveRendererWorldSettings( const GothicRendererSettings& s ) {
@@ -841,27 +1029,44 @@ void GothicAPI::SaveRendererWorldSettings( const GothicRendererSettings& s ) {
     WritePrivateProfileStringA( "Fog", "HeightFalloff", std::to_string( s.FogHeightFalloff ).c_str(), ini.c_str() );
     WritePrivateProfileStringA( "Fog", "GlobalDensity", std::to_string( s.FogGlobalDensity ).c_str(), ini.c_str() );
 
-    WritePrivateProfileStringA( "Atmoshpere", "SunLightColorR", std::to_string( static_cast<int>(s.SunLightColor.x * 255.0f) ).c_str(), ini.c_str() );
-    WritePrivateProfileStringA( "Atmoshpere", "SunLightColorG", std::to_string( static_cast<int>(s.SunLightColor.y * 255.0f) ).c_str(), ini.c_str() );
-    WritePrivateProfileStringA( "Atmoshpere", "SunLightColorB", std::to_string( static_cast<int>(s.SunLightColor.z * 255.0f) ).c_str(), ini.c_str() );
-
-    WritePrivateProfileStringA( "Atmoshpere", "FogColorModR", std::to_string( static_cast<int>(s.FogColorMod.x * 255.0f) ).c_str(), ini.c_str() );
-    WritePrivateProfileStringA( "Atmoshpere", "FogColorModG", std::to_string( static_cast<int>(s.FogColorMod.y * 255.0f) ).c_str(), ini.c_str() );
-    WritePrivateProfileStringA( "Atmoshpere", "FogColorModB", std::to_string( static_cast<int>(s.FogColorMod.z * 255.0f) ).c_str(), ini.c_str() );
+    WritePrivateProfileRGB("Atmoshpere", "SunLightColor", s.SunLightColor, ini.c_str() );
+    WritePrivateProfileRGB("Atmoshpere", "FogColorMod", s.FogColorMod, ini.c_str() );
 
     WritePrivateProfileStringA( "General", "VisualFXDrawRadius", std::to_string( s.VisualFXDrawRadius ).c_str(), ini.c_str() );
     WritePrivateProfileStringA( "General", "OutdoorVobDrawRadius", std::to_string( s.OutdoorVobDrawRadius ).c_str(), ini.c_str() );
     WritePrivateProfileStringA( "General", "OutdoorSmallVobDrawRadius", std::to_string( s.OutdoorSmallVobDrawRadius ).c_str(), ini.c_str() );
+    WritePrivateProfileStringA( "General", "IndoorVobDrawRadius", std::to_string( s.IndoorVobDrawRadius ).c_str(), ini.c_str() );
     WritePrivateProfileStringA( "General", "SkeletalMeshDrawRadius", std::to_string( s.SkeletalMeshDrawRadius ).c_str(), ini.c_str() );
     WritePrivateProfileStringA( "General", "SectionDrawRadius", std::to_string( s.SectionDrawRadius ).c_str(), ini.c_str() );
+
+    WritePrivateProfileStringA( "Rain", "RadiusRange", std::to_string( s.RainRadiusRange ).c_str(), ini.c_str() );
+    WritePrivateProfileStringA( "Rain", "HeightRange", std::to_string( s.RainHeightRange ).c_str(), ini.c_str() );
+    WritePrivateProfileStringA( "Rain", "NumParticles", std::to_string( s.RainNumParticles ).c_str(), ini.c_str() );
+    WritePrivateProfileArray( "Rain", "GlobalVelocity", &s.RainGlobalVelocity.x, 3, ini.c_str() );
+    WritePrivateProfileStringA( "Rain", "SceneWettness", std::to_string( s.RainSceneWettness ).c_str(), ini.c_str() );
+    WritePrivateProfileStringA( "Rain", "SunLightStrength", std::to_string( s.RainSunLightStrength ).c_str(), ini.c_str() );
+    WritePrivateProfileRGB( "Rain", "FogColor", s.RainFogColor, ini.c_str() );
+    WritePrivateProfileStringA( "Rain", "FogDensity", std::to_string( s.RainFogDensity ).c_str(), ini.c_str() );
 
     WritePrivateProfileStringA( "Atmoshpere", "ReplaceSunDirection", std::to_string( s.ReplaceSunDirection ? TRUE : FALSE ).c_str(), ini.c_str() );
 
     AtmosphereSettings& aS = GetSky()->GetAtmoshpereSettings();
 
-    WritePrivateProfileStringA( "Atmoshpere", "LightDirectionX", std::to_string( aS.LightDirection.x ).c_str(), ini.c_str() );
-    WritePrivateProfileStringA( "Atmoshpere", "LightDirectionY", std::to_string( aS.LightDirection.y ).c_str(), ini.c_str() );
-    WritePrivateProfileStringA( "Atmoshpere", "LightDirectionZ", std::to_string( aS.LightDirection.z ).c_str(), ini.c_str() );
+    WritePrivateProfileArray("Atmoshpere", "LightDirection", &aS.LightDirection.x, 3, ini.c_str() );
+
+    // delete old named keys
+
+    WritePrivateProfileStringA( "Atmoshpere", "SunLightColorR", nullptr, ini.c_str() );
+    WritePrivateProfileStringA( "Atmoshpere", "SunLightColorG", nullptr, ini.c_str() );
+    WritePrivateProfileStringA( "Atmoshpere", "SunLightColorB", nullptr, ini.c_str() );
+
+    WritePrivateProfileStringA( "Atmoshpere", "FogColorModR", nullptr, ini.c_str() );
+    WritePrivateProfileStringA( "Atmoshpere", "FogColorModG", nullptr, ini.c_str() );
+    WritePrivateProfileStringA( "Atmoshpere", "FogColorModB", nullptr, ini.c_str() );
+    
+    WritePrivateProfileStringA( "Atmoshpere", "LightDirectionX", nullptr, ini.c_str() );
+    WritePrivateProfileStringA( "Atmoshpere", "LightDirectionY", nullptr, ini.c_str() );
+    WritePrivateProfileStringA( "Atmoshpere", "LightDirectionZ", nullptr, ini.c_str() );
 }
 
 /** Goes through the given zCTree and registers all found vobs */
@@ -2691,7 +2896,7 @@ void GothicAPI::DrawParticleFX( zCVob* source, zCParticleFX* fx, ParticleFrameDa
             if ( emitter->GetVisShpType() == 5 && ParticleEffectProgMeshes.find(source) == ParticleEffectProgMeshes.end() ) {
                 AddParticleEffect( source );
             }
-            if ( (texture = emitter->GetVisTexture()) != nullptr ) {
+            if ( (texture = emitter->GetVisTexture( pfx )) != nullptr ) {
                 // Check if it's loaded
                 if ( texture->CacheIn( 0.6f ) != zRES_CACHED_IN ) {
                     return;
@@ -3213,6 +3418,12 @@ GInventory* GothicAPI::GetInventory() {
     return Inventory.get();
 }
 
+/** Returns the far Z */
+float GothicAPI::GetFarZ() {
+    zCSkyController_Outdoor* sc = oCGame::GetGame()->_zCSession_world->GetSkyControllerOutdoor();
+    return sc->GetFarZ();
+}
+
 /** Returns the fog-color */
 FXMVECTOR GothicAPI::GetFogColor() {
     zCSkyController_Outdoor* sc = oCGame::GetGame()->_zCSession_world->GetSkyControllerOutdoor();
@@ -3336,27 +3547,14 @@ LRESULT GothicAPI::OnWindowMessage( HWND hWnd, UINT msg, WPARAM wParam, LPARAM l
 #endif
         case VK_F11:
             if ( ( GetAsyncKeyState( VK_CONTROL ) & 0x8000 ) && !GMPModeActive ) {
-                if ( reinterpret_cast<D3D11GraphicsEngine*>(Engine::GraphicsEngine)->HasSettingsWindow() )
-                    Engine::GraphicsEngine->OnUIEvent( BaseGraphicsEngine::EUIEvent::UI_OpenSettings );
-
-                Engine::AntTweakBar->SetActive( !Engine::AntTweakBar->GetActive() );
-                SetEnableGothicInput( !Engine::AntTweakBar->GetActive() );
+                Engine::GraphicsEngine->OnUIEvent( BaseGraphicsEngine::EUIEvent::UI_ToggleAdvancedSettings );
             } else {
-                if ( Engine::AntTweakBar->GetActive() ) {
-                    Engine::AntTweakBar->SetActive( false );
-                    SetEnableGothicInput( true );
-                }
                 Engine::GraphicsEngine->OnUIEvent( BaseGraphicsEngine::EUIEvent::UI_OpenSettings );
             }
             break;
 
         case VK_ESCAPE:
-            if ( Engine::AntTweakBar->GetActive() ) {
-                Engine::AntTweakBar->SetActive( false );
-                SetEnableGothicInput( true );
-            }
-            if ( reinterpret_cast<D3D11GraphicsEngine*>(Engine::GraphicsEngine)->HasSettingsWindow() )
-                Engine::GraphicsEngine->OnUIEvent( BaseGraphicsEngine::EUIEvent::UI_OpenSettings );
+            Engine::GraphicsEngine->OnUIEvent( BaseGraphicsEngine::EUIEvent::UI_ClosedSettings );
             break;
 
         case VK_NUMPAD1:
@@ -3364,8 +3562,19 @@ LRESULT GothicAPI::OnWindowMessage( HWND hWnd, UINT msg, WPARAM wParam, LPARAM l
                 SpawnVegetationBoxAt( GetCameraPosition() );
             break;
         }
+        default:
+            if ( Engine::ImGuiHandle->IsActive ) {
+                // do not delegate input further if settings is open
+                Engine::ImGuiHandle->OnWindowMessage( hWnd, msg, wParam, lParam );
+                return DefWindowProc( hWnd, msg, wParam, lParam );
+            }
         break;
-
+    case WM_KEYUP:
+        if ( Engine::ImGuiHandle->IsActive ) {
+            // do not delegate input further if settings is open
+            Engine::ImGuiHandle->OnWindowMessage( hWnd, msg, wParam, lParam );
+            return DefWindowProc( hWnd, msg, wParam, lParam );
+        }
     // Disable any painting that zengine might be doing
     case WM_PAINT:
     case WM_NCPAINT:
@@ -3380,6 +3589,7 @@ LRESULT GothicAPI::OnWindowMessage( HWND hWnd, UINT msg, WPARAM wParam, LPARAM l
     }
 
     // This is only processed when the bar is activated, so just call this here
+    Engine::ImGuiHandle->OnWindowMessage( hWnd, msg, wParam, lParam );
     Engine::AntTweakBar->OnWindowMessage( hWnd, msg, wParam, lParam );
     Engine::GraphicsEngine->OnWindowMessage( hWnd, msg, wParam, lParam );
 
@@ -3515,10 +3725,11 @@ void GothicAPI::CollectVisibleVobs( std::vector<VobInfo*>& vobs, std::vector<Vob
                 vii.world = it->WorldMatrix;
                 vii.color = it->GroundColor;
                 vii.windStrenth = 0.0f;
-                vii.windSpeed = 0.0f;
+                vii.canBeAffectedByPlayer = 0;
 
                 zTAnimationMode aniMode = it->Vob->GetVisualAniMode();
-                if ( aniMode != zVISUAL_ANIMODE_NONE && !Engine::GAPI->IsGamePaused() ) {
+                if ( aniMode != zVISUAL_ANIMODE_NONE ) {
+                    vii.canBeAffectedByPlayer = (!it->Vob->GetDynColl() ? 1.0f : 0.0f);
                     ProcessVobAnimation( it->Vob, aniMode, vii );
                 }
 
@@ -3689,20 +3900,8 @@ std::vector<VobInfo*>::iterator GothicAPI::MoveVobFromBspToDynamic( VobInfo* vob
 
 static void ProcessVobAnimation( zCVob* vob, zTAnimationMode aniMode, VobInstanceInfo& vobInstance ) {
     if ( Engine::GAPI->GetRendererState().RendererSettings.WindQuality == GothicRendererSettings::EWindQuality::WIND_QUALITY_ADVANCED ) {
-        // get rain weight
-        float rainWeight = Engine::GAPI->GetRainFXWeight();
-
-        // limit in 0..1 range
-        rainWeight = std::max<float>( 0.0f, std::min<float>( 1.0f, rainWeight ) );
-
-        // max multiplayers when rain is 1.0 (max)
-        constexpr float rainMaxStrengthMultiplier = 2.75f;
-        constexpr float rainMaxSpeedMultiplier = 2.15f;
-
-        vobInstance.windStrenth = std::max<float>( 0.1f, vob->GetVisualAniModeStrength() ) * (1.0f + rainWeight * (rainMaxStrengthMultiplier - 1.0f))
-            * Engine::GAPI->GetRendererState().RendererSettings.GlobalWindStrength;
-
-        vobInstance.windSpeed = 1.5f * (1.0f + rainWeight * (rainMaxSpeedMultiplier - 1.0f));
+        extern float vobAnimation_WindStrength;
+        vobInstance.windStrenth = std::max<float>( 0.1f, vob->GetVisualAniModeStrength() ) * vobAnimation_WindStrength;
     }
 }
 
@@ -3724,10 +3923,11 @@ static void CVVH_AddNotDrawnVobToList( std::vector<VobInfo*>& target, std::vecto
                 vii.world = it->WorldMatrix;
                 vii.color = it->GroundColor;
                 vii.windStrenth = 0.0f;
-                vii.windSpeed = 0.0f;
+                vii.canBeAffectedByPlayer = 0;
 
                 zTAnimationMode aniMode = it->Vob->GetVisualAniMode();
-                if ( aniMode != zVISUAL_ANIMODE_NONE && !Engine::GAPI->IsGamePaused() ) {
+                if ( aniMode != zVISUAL_ANIMODE_NONE ) {
+                    vii.canBeAffectedByPlayer = (!it->Vob->GetDynColl() ? 1.0f : 0.0f);
                     ProcessVobAnimation( it->Vob, aniMode, vii );
                 }
 
@@ -4532,6 +4732,8 @@ XRESULT GothicAPI::SaveMenuSettings( const std::string& file ) {
     WritePrivateProfileStringA( "Display", "WindQuality", std::to_string( s.WindQuality ).c_str(), ini.c_str() );
     WritePrivateProfileStringA( "Display", "WindStrength", std::to_string( s.GlobalWindStrength ).c_str(), ini.c_str() );
     WritePrivateProfileStringA( "Display", "WaterWaveAnimation", std::to_string( s.EnableWaterAnimation ? TRUE : FALSE ).c_str(), ini.c_str() );
+    WritePrivateProfileStringA( "Display", "HeroAffectsObjects", std::to_string( s.HeroAffectsObjects ? TRUE : FALSE ).c_str(), ini.c_str() );
+    
 
     WritePrivateProfileStringA( "Shadows", "EnableShadows", std::to_string( s.EnableShadows ? TRUE : FALSE ).c_str(), ini.c_str() );
     WritePrivateProfileStringA( "Shadows", "EnableSoftShadows", std::to_string( s.EnableSoftShadows ? TRUE : FALSE ).c_str(), ini.c_str() );
@@ -4647,7 +4849,8 @@ XRESULT GothicAPI::LoadMenuSettings( const std::string& file ) {
         s.WindQuality = GetPrivateProfileIntA( "Display", "WindQuality", 0, ini.c_str() );
         s.GlobalWindStrength = GetPrivateProfileFloatA( "Display", "WindStrength", 1.0f, ini );
         s.EnableWaterAnimation = GetPrivateProfileBoolA( "Display", "WaterWaveAnimation", true, ini );
-
+        s.HeroAffectsObjects = GetPrivateProfileBoolA( "Display", "HeroAffectsObjects", true, ini );
+        
         s.EnableSMAA = GetPrivateProfileBoolA( "SMAA", "Enabled", false, ini );
         s.SharpenFactor = GetPrivateProfileFloatA( "SMAA", "SharpenFactor", 0.30f, ini );
 
