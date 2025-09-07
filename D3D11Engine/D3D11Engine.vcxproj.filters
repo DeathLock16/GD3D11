@@ -782,6 +782,7 @@
     <ClInclude Include="zCInput_Win32.h">
       <Filter>ZenGin\Classes</Filter>
     </ClInclude>
+    <ClInclude Include="ddraw_shader_ipc.h" />
   </ItemGroup>
   <ItemGroup>
     <ClCompile Include="pch.cpp" />
@@ -1064,6 +1065,7 @@
     <ClCompile Include="include\imgui\backends\imgui_impl_win32.cpp">
       <Filter>Librarys\imgui\backends</Filter>
     </ClCompile>
+    <ClCompile Include="ddraw_shader_ipc.cpp" />
   </ItemGroup>
   <ItemGroup>
     <None Include="ddraw.def">

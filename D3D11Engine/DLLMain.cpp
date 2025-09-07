@@ -15,6 +15,8 @@
 #include <shlwapi.h>
 #include "GSky.h"
 
+#include "ddraw_shader_ipc.h"
+
 #pragma comment(lib, "Imagehlp.lib") // Used in VersionCheck.cpp to get Gothic.exe Checksum.
 #pragma comment(lib, "shlwapi.lib")
 
@@ -545,6 +547,9 @@ BOOL WINAPI DllMain( HINSTANCE hInst, DWORD reason, LPVOID ) {
         ddraw.GetSurfaceFromDC = GetProcAddress( ddraw.dll, "GetSurfaceFromDC" );
         ddraw.RegisterSpecialCase = GetProcAddress( ddraw.dll, "RegisterSpecialCase" );
         ddraw.ReleaseDDThreadLock = GetProcAddress( ddraw.dll, "ReleaseDDThreadLock" );
+
+        DisableThreadLibraryCalls(hInst);
+        DX11_InitRemoteControl();
     } else if ( reason == DLL_PROCESS_DETACH ) {
         Engine::OnShutDown();
 

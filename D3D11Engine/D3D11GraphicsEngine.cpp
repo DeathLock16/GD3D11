@@ -51,6 +51,8 @@
 
 #include "ImGuiShim.h"
 
+#include "ddraw_shader_ipc.h"
+
 namespace wrl = Microsoft::WRL;
 
 const int NUM_UNLOADEDTEXCOUNT_FORCE_LOAD_TEXTURES = 100;
@@ -1401,9 +1403,13 @@ XRESULT D3D11GraphicsEngine::Present() {
 
     SetDefaultStates();
 
-    //SetActivePixelShader( "PS_PFX_Vargoth" );
-    //SetActivePixelShader( "PS_PFX_Blurred" );
-    SetActivePixelShader( "PS_PFX_GammaCorrectInv" );
+    DX11_ApplyPendingShaderIfAny();
+
+    if (DX11Shader_HasPSOverride()) {
+        SetActivePixelShader(DX11Shader_GetPSOverride().c_str());
+    } else {
+        SetActivePixelShader("PS_PFX_GammaCorrectInv");
+    }
 
     ActivePS->Apply();
 
