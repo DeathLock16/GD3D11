@@ -25,7 +25,7 @@
 using namespace DirectX;
 
 #ifndef VERSION_NUMBER
-#define VERSION_NUMBER "1.3"
+#define VERSION_NUMBER "1.3.1"
 #endif
 
 __declspec(selectany) const char* VERSION_NUMBER_STR = VERSION_NUMBER;

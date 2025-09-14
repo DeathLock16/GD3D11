@@ -1,6 +1,5 @@
 #include "ddraw_shader_ipc.h"
 #include <mutex>
-#include <atomic>
 #include <windows.h>
 
 static std::mutex g_shaderMtx;
@@ -9,6 +8,8 @@ static std::atomic_bool g_hasPending{false};
 
 static std::mutex g_overrideMtx;
 static std::string g_psOverride;
+
+std::atomic<int> g_blendDirection{+1};
 
 static std::string W2U(const std::wstring& w) {
     if (w.empty()) return {};
@@ -33,12 +34,31 @@ void DX11Shader_ClearOverride() {
 }
 
 void ApplyShaderByName(const std::wstring& wname) {
+    
     if (wname.empty()) return;
-    if (wname == L"__CLEAR__" || wname == L"default") {
+
+    size_t pos = wname.find(L':');
+    std::wstring shaderPart = wname;
+    std::wstring dirPart;
+    if (pos != std::wstring::npos) {
+        shaderPart = wname.substr(0, pos);
+        dirPart    = wname.substr(pos + 1);
+    }
+
+    if (!dirPart.empty()) {
+
+        if (_wcsicmp(dirPart.c_str(), L"UP") == 0)
+            g_blendDirection.store(+1, std::memory_order_release);
+            
+        else if (_wcsicmp(dirPart.c_str(), L"DOWN") == 0)
+            g_blendDirection.store(-1, std::memory_order_release);
+    }
+
+    if (shaderPart == L"__CLEAR__" || shaderPart == L"default") {
         DX11Shader_ClearOverride();
         return;
     }
-    std::string name = W2U(wname);
+    std::string name = W2U(shaderPart);
     { std::lock_guard<std::mutex> lk(g_overrideMtx); g_psOverride = std::move(name); }
 }
 

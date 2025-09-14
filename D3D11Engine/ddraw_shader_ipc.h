@@ -1,5 +1,8 @@
 #pragma once
+#include <atomic>
 #include <string>
+
+extern std::atomic<int> g_blendDirection;
 
 void DX11_ApplyPendingShaderIfAny();
 bool DX11Shader_HasPSOverride();

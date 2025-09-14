@@ -1366,26 +1366,17 @@ D3D11GraphicsEngine::GetDisplayModeList( std::vector<DisplayModeInfo>* modeList,
 
     return XR_SUCCESS;
 }
-float blendAmount = 0.0f; // globalnie lub jako pole klasy
-bool blendIncreasing = true;
 
-float UpdateBlendAmount()
-{
-    // Zmieñ wartoœæ blendAmount o 0.01 w górê lub dó³
-    if (blendIncreasing)
-        blendAmount += 0.01f;
-    else
-        blendAmount -= 0.01f;
+float blendAmount = 0.0f;
 
-    // Odbij jeœli wysz³o poza zakres 0..1
-    if (blendAmount >= 1.0f) {
-        blendAmount = 1.0f;
-        blendIncreasing = false;
-    }
-    else if (blendAmount <= 0.0f) {
-        blendAmount = 0.0f;
-        blendIncreasing = true;
-    }
+float UpdateBlendAmount(float step = 0.01f) {
+
+    int dir = g_blendDirection.load(std::memory_order_acquire);
+    blendAmount += step * dir;
+
+    if (blendAmount > 1.0f) blendAmount = 1.0f;
+    if (blendAmount < 0.0f) blendAmount = 0.0f;
+
     return blendAmount;
 }
 /** Presents the current frame to the screen */
