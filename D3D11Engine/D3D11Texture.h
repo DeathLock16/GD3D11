@@ -74,8 +74,5 @@ private:
 
     /** Thumbnail */
     Microsoft::WRL::ComPtr<ID3D11Texture2D> Thumbnail;
-        
-    std::vector<uint8_t> lastData;
-    std::vector<uint8_t> lastTextureBuffer;
 };
 
